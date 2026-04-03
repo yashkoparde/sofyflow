@@ -1,5 +1,3 @@
-undefined
-export function onStreamEnded(stream: MediaStream, callback: () => void) {
-  const track = stream.getAudioTracks()[0];
-  if (track) track.onended = callback;
+export async function getMicrophoneStream(): Promise<MediaStream> {
+  return await navigator.mediaDevices.getUserMedia({ audio: true });
 }
