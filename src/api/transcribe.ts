@@ -10,6 +10,8 @@ export async function sendAudioToGroq(blob: Blob): Promise<string> {
     headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
     body: formData
   });
+  if (!res.ok) throw new Error(`HTTP error ${res.status}`);
   const data = await res.json();
-  return data.text || '';
+  if (!data.text) throw new Error('Empty response from API');
+  return data.text;
 }
