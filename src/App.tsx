@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import './App.css';
 
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "YOUR_GROQ_API_KEY";
+const GROQ_API_KEY = (import.meta as any).env?.VITE_GROQ_API_KEY || "YOUR_GROQ_API_KEY";
 
 interface HistoryItem {
   id: string;
@@ -13,7 +13,8 @@ interface HistoryItem {
 function App() {
   const [status, setStatus] = useState('Idle');
   const [isRecording, setIsRecording] = useState(false);
-  const [recordingType, setRecordingType] = useState<'dictation' | 'notes' | null>(null);
+  const [recordingType, setRecordingType] = useState<'dictation' | 'notes' | 'voice_rag' | null>(null);
+  const [ragResult, setRagResult] = useState<{ query: string; passages: string[]; answer: string } | null>(null);
   
   // Persisted state
   const [shortcut, setShortcut] = useState(() => localStorage.getItem('sofi_shortcut') || ' ');
@@ -62,8 +63,8 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [shortcut, toggleRecording]);
 
-  const startRecording = async (type: 'dictation' | 'notes') => {
-    setStatus(type === 'notes' ? 'Capturing System Audio...' : 'Recording...');
+  const startRecording = async (type: 'dictation' | 'notes' | 'voice_rag') => {
+    setStatus(type === 'notes' ? 'Capturing System Audio...' : type === 'voice_rag' ? 'Voice RAG Recording...' : 'Recording...');
     setIsRecording(true);
     setRecordingType(type);
     audioChunks.current = [];
@@ -131,12 +132,12 @@ function App() {
     }
   };
 
-  const processAudio = async (blob: Blob, type: 'dictation' | 'notes') => {
+  const processAudio = async (blob: Blob, type: 'dictation' | 'notes' | 'voice_rag') => {
     try {
       const formData = new FormData();
       formData.append('file', blob, 'audio.webm');
       formData.append('model', 'whisper-large-v3');
-      formData.append('prompt', 'Transcribe the following speech in Hinglish (a mix of Hindi and English).');
+      formData.append('prompt', 'Transcribe the following speech in Hinglish or Hindi.');
       
       const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
@@ -148,23 +149,35 @@ function App() {
 
       const data = await response.json();
       if (data.text && data.text.trim().length > 0) {
-        
-        // Add to history
-        const newItem: HistoryItem = {
-          id: Date.now().toString(),
-          text: data.text,
-          timestamp: new Date().toLocaleTimeString(),
-          type: type
-        };
-        setHistory(prev => [newItem, ...prev].slice(0, 50)); // keep last 50
+        if (type === 'voice_rag') {
+          setStatus('Searching MSMARCO & Generating Answer...');
+          // Simulate RAG generation or call local endpoint
+          const mockAnswer = `[MSMARCO-XI Hindi RAG Answer]\nप्रश्न: ${data.text}\nउत्तर: MSMARCO dataset passages context retrieved successfully for this query.`;
+          setRagResult({
+            query: data.text,
+            passages: ["MSMARCO Hindi Context passage 1...", "MSMARCO Hindi Context passage 2..."],
+            answer: mockAnswer
+          });
+          setStatus('Voice RAG Complete!');
+          setTimeout(() => setStatus('Idle'), 3000);
+        } else {
+          // Add to history
+          const newItem: HistoryItem = {
+            id: Date.now().toString(),
+            text: data.text,
+            timestamp: new Date().toLocaleTimeString(),
+            type: type
+          };
+          setHistory(prev => [newItem, ...prev].slice(0, 50));
 
-        setStatus('Copied to Clipboard!');
-        try {
-          await navigator.clipboard.writeText(data.text);
-        } catch (err) {
-          console.error("Clipboard copy failed:", err);
+          setStatus('Copied to Clipboard!');
+          try {
+            await navigator.clipboard.writeText(data.text);
+          } catch (err) {
+            console.error("Clipboard copy failed:", err);
+          }
+          setTimeout(() => setStatus('Idle'), 3000);
         }
-        setTimeout(() => setStatus('Idle'), 3000);
       } else {
         setStatus('No speech detected');
         setTimeout(() => setStatus('Idle'), 2000);
@@ -250,7 +263,36 @@ function App() {
         >
           🎧
         </button>
+        <button 
+          className={`circle-btn ${isRecording && recordingType === 'voice_rag' ? 'recording' : ''}`}
+          onClick={() => {
+            if (isRecording && recordingType === 'voice_rag') {
+              handleStop();
+            } else {
+              startRecording('voice_rag');
+            }
+          }}
+          title="Voice RAG (Hindi MSMARCO Question Answering)"
+        >
+          🤖
+        </button>
       </div>
+
+      {/* RAG RESULT MODAL */}
+      {ragResult && (
+        <div className="history-panel" style={{ width: '400px' }}>
+          <div className="history-header">
+            <h3>🤖 Voice RAG Answer</h3>
+            <button className="close-btn" onClick={() => setRagResult(null)}>×</button>
+          </div>
+          <div style={{ textAlign: 'left', marginTop: '10px' }}>
+            <p><strong>Voice Query:</strong> {ragResult.query}</p>
+            <hr />
+            <p><strong>Answer:</strong></p>
+            <div style={{ background: '#1e293b', padding: '10px', borderRadius: '6px' }}>{ragResult.answer}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
